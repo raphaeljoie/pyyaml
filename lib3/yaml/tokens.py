@@ -16,9 +16,10 @@ class Token(object):
 
 class DirectiveToken(Token):
     id = '<directive>'
-    def __init__(self, name, value, start_mark, end_mark):
+    def __init__(self, name, value, comment, start_mark, end_mark):
         self.name = name
         self.value = value
+        self.comment = comment
         self.start_mark = start_mark
         self.end_mark = end_mark
 
@@ -95,9 +96,10 @@ class TagToken(Token):
 
 class ScalarToken(Token):
     id = '<scalar>'
-    def __init__(self, value, plain, start_mark, end_mark, style=None):
+    def __init__(self, value, plain, comment, start_mark, end_mark, style=None):
         self.value = value
         self.plain = plain
+        self.comment = comment
         self.start_mark = start_mark
         self.end_mark = end_mark
         self.style = style

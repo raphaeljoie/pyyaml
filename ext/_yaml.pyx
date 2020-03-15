@@ -167,9 +167,11 @@ cdef class Mark:
 #cdef class DirectiveToken(Token):
 #    cdef readonly object name
 #    cdef readonly object value
-#    def __init__(self, name, value, Mark start_mark, Mark end_mark):
+#    cdef readonly object comment
+#    def __init__(self, name, value, comment, Mark start_mark, Mark end_mark):
 #        self.name = name
 #        self.value = value
+#        self.comment = comment
 #        self.start_mark = start_mark
 #        self.end_mark = end_mark
 #
@@ -236,10 +238,12 @@ cdef class Mark:
 #cdef class ScalarToken(Token):
 #    cdef readonly object value
 #    cdef readonly object plain
+#    cdef readonly object comment
 #    cdef readonly object style
-#    def __init__(self, value, plain, Mark start_mark, Mark end_mark, style=None):
+#    def __init__(self, value, plain, comment, Mark start_mark, Mark end_mark, style=None):
 #        self.value = value
 #        self.plain = plain
+#        self.comment = comment
 #        self.start_mark = start_mark
 #        self.end_mark = end_mark
 #        self.style = style
@@ -409,14 +413,18 @@ cdef class CParser:
         elif token.type == YAML_STREAM_END_TOKEN:
             return StreamEndToken(start_mark, end_mark)
         elif token.type == YAML_VERSION_DIRECTIVE_TOKEN:
+            # TODO check None comment
             return DirectiveToken(u"YAML",
                     (token.data.version_directive.major,
                         token.data.version_directive.minor),
+                    None,
                     start_mark, end_mark)
         elif token.type == YAML_TAG_DIRECTIVE_TOKEN:
             handle = PyUnicode_FromString(token.data.tag_directive.handle)
             prefix = PyUnicode_FromString(token.data.tag_directive.prefix)
+            # TODO check None comment
             return DirectiveToken(u"TAG", (handle, prefix),
+                    None,
                     start_mark, end_mark)
         elif token.type == YAML_DOCUMENT_START_TOKEN:
             return DocumentStartToken(start_mark, end_mark)
@@ -472,7 +480,8 @@ cdef class CParser:
                 style = u'|'
             elif token.data.scalar.style == YAML_FOLDED_SCALAR_STYLE:
                 style = u'>'
-            return ScalarToken(value, plain,
+            # TODO check None comment
+            return ScalarToken(value, plain, None,
                     start_mark, end_mark, style)
         else:
             if PY_MAJOR_VERSION < 3:

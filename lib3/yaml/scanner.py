@@ -155,7 +155,7 @@ class Scanner:
 
     def fetch_more_tokens(self):
 
-        # Eat whitespaces and comments until we reach the next token.
+        # Eat whitespaces until we reach the next token.
         self.scan_to_next_token()
 
         # Remove obsolete possible simple keys.
@@ -249,6 +249,9 @@ class Scanner:
         # Is it a double quoted scalar?
         if ch == '\"':
             return self.fetch_double()
+
+        if ch == '#':
+            return self.fetch_comment()
 
         # It must be a plain scalar then.
         if self.check_plain():
@@ -654,6 +657,9 @@ class Scanner:
     def fetch_double(self):
         self.fetch_flow_scalar(style='"')
 
+    def fetch_comment(self):
+        self.scan_comment()
+
     def fetch_flow_scalar(self, style):
 
         # A flow scalar could be a simple key.
@@ -775,21 +781,41 @@ class Scanner:
         while not found:
             while self.peek() == ' ':
                 self.forward()
-            if self.peek() == '#':
-                while self.peek() not in '\0\r\n\x85\u2028\u2029':
-                    self.forward()
+            # Don't skip comments anymore
+            #if self.peek() == '#':
+            #    while self.peek() not in '\0\r\n\x85\u2028\u2029':
+            #        self.forward()
             if self.scan_line_break():
                 if not self.flow_level:
                     self.allow_simple_key = True
             else:
                 found = True
 
+    def scan_comment(self):
+        acc = ''
+        while self.peek() not in '\0\r\n\x85\u2028\u2029':
+            acc += self.peek()
+            self.forward()
+
+        #self.scan_line_break()
+
+        # TODO CommentToken
+        return acc
+
+    # At the beginning of the doc
+    # %YAML value (# comment)? [LINE BREAK]
+    #
+    # OR
+    #
+    # %TAG value (# comment)? [LINE BREAK]
+    #
     def scan_directive(self):
         # See the specification for details.
         start_mark = self.get_mark()
         self.forward()
         name = self.scan_directive_name(start_mark)
         value = None
+        comment = None
         if name == 'YAML':
             value = self.scan_yaml_directive_value(start_mark)
             end_mark = self.get_mark()
@@ -801,7 +827,13 @@ class Scanner:
             while self.peek() not in '\0\r\n\x85\u2028\u2029':
                 self.forward()
         self.scan_directive_ignored_line(start_mark)
-        return DirectiveToken(name, value, start_mark, end_mark)
+
+        # Scan possible comment at the end
+        if self.peek() == '#':
+            comment = self.scan_comment()
+            self.scan_line_break()
+
+        return DirectiveToken(name, value, comment, start_mark, end_mark)
 
     def scan_directive_name(self, start_mark):
         # See the specification for details.
@@ -882,15 +914,19 @@ class Scanner:
                     "expected ' ', but found %r" % ch, self.get_mark())
         return value
 
+    # Skip
+    #
+    # %YAML 1.2 # Attempt parsing
     def scan_directive_ignored_line(self, start_mark):
         # See the specification for details.
         while self.peek() == ' ':
             self.forward()
-        if self.peek() == '#':
-            while self.peek() not in '\0\r\n\x85\u2028\u2029':
-                self.forward()
+        #if self.peek() == '#':
+        #    while self.peek() not in '\0\r\n\x85\u2028\u2029':
+        #        self.forward()
         ch = self.peek()
-        if ch not in '\0\r\n\x85\u2028\u2029':
+        if ch not in '#\0\r\n\x85\u2028\u2029':
+#        if ch not in '\0\r\n\x85\u2028\u2029':
             raise ScannerError("while scanning a directive", start_mark,
                     "expected a comment or a line break, but found %r"
                         % ch, self.get_mark())
@@ -982,12 +1018,18 @@ class Scanner:
             folded = False
 
         chunks = []
+        comment = None
         start_mark = self.get_mark()
 
         # Scan the header.
         self.forward()
         chomping, increment = self.scan_block_scalar_indicators(start_mark)
         self.scan_block_scalar_ignored_line(start_mark)
+
+        # Scan possible comment at the end
+        if self.peek() == '#':
+            comment = self.scan_comment()
+            self.scan_line_break()
 
         # Determine the indentation level and go to the first non-empty line.
         min_indent = self.indent+1
@@ -1046,7 +1088,7 @@ class Scanner:
             chunks.extend(breaks)
 
         # We are done.
-        return ScalarToken(''.join(chunks), False, start_mark, end_mark,
+        return ScalarToken(''.join(chunks), False, comment, start_mark, end_mark,
                 style)
 
     def scan_block_scalar_indicators(self, start_mark):
@@ -1089,15 +1131,36 @@ class Scanner:
                     % ch, self.get_mark())
         return chomping, increment
 
+    # exactly the same implementation as scan_directive_ignored_line()
+    #
+    # - | # Just the style
+    #  literal
+    # - >1 # Indentation indicator
+    # folded
+    # - |+ # Chomping indicator
+    #  keep
+    # - >-1 # Both indicators
+    #   strip
+    #
+    # OR
+    #
+    # | # Simple block scalar
+    #  literal
+    #  	text
+    #
+    # OR
+    #
+    # > # Simple folded scalar
+    #  folded
+    #  text
+    #  	lines
+    #
     def scan_block_scalar_ignored_line(self, start_mark):
         # See the specification for details.
         while self.peek() == ' ':
             self.forward()
-        if self.peek() == '#':
-            while self.peek() not in '\0\r\n\x85\u2028\u2029':
-                self.forward()
         ch = self.peek()
-        if ch not in '\0\r\n\x85\u2028\u2029':
+        if ch not in '#\0\r\n\x85\u2028\u2029':
             raise ScannerError("while scanning a block scalar", start_mark,
                     "expected a comment or a line break, but found %r" % ch,
                     self.get_mark())
@@ -1152,7 +1215,9 @@ class Scanner:
             chunks.extend(self.scan_flow_scalar_non_spaces(double, start_mark))
         self.forward()
         end_mark = self.get_mark()
-        return ScalarToken(''.join(chunks), False, start_mark, end_mark,
+
+        # TODO check None comment
+        return ScalarToken(''.join(chunks), False, None, start_mark, end_mark,
                 style)
 
     ESCAPE_REPLACEMENTS = {
@@ -1306,7 +1371,9 @@ class Scanner:
             if not spaces or self.peek() == '#' \
                     or (not self.flow_level and self.column < indent):
                 break
-        return ScalarToken(''.join(chunks), True, start_mark, end_mark)
+
+        # TODO check none comment
+        return ScalarToken(''.join(chunks), True, None, start_mark, end_mark)
 
     def scan_plain_spaces(self, indent, start_mark):
         # See the specification for details.

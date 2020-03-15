@@ -96,7 +96,7 @@ class CanonicalScanner:
         if self.data[self.index:self.index+len(self.DIRECTIVE)] == self.DIRECTIVE and \
                 self.data[self.index+len(self.DIRECTIVE)] in ' \n\0':
             self.index += len(self.DIRECTIVE)
-            return yaml.DirectiveToken('YAML', (1, 1), None, None)
+            return yaml.DirectiveToken('YAML', (1, 1), None, None, None)
         else:
             raise CanonicalError("invalid directive")
 
@@ -191,7 +191,7 @@ class CanonicalScanner:
                 self.index += 1
         chunks.append(self.data[start:self.index])
         self.index += 1
-        return yaml.ScalarToken(''.join(chunks), False, None, None)
+        return yaml.ScalarToken(''.join(chunks), False, None, None, None)
 
     def find_token(self):
         found = False
